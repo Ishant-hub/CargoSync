@@ -1,20 +1,61 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
+import { ActivityIndicator, View } from 'react-native';
+import { ThemeProvider } from './src/theme/ThemeProvider';
+import { LanguageProvider } from './src/context/LanguageContext';
+import { AuthProvider } from './src/context/AuthContext';
+import RootNavigator from './src/navigation/RootNavigator';
+import { Colors } from './src/theme/tokens';
 
-export default function App() {
+function MainApp() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      <RootNavigator />
+    </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: Colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={Colors.primaryAmber} />
+      </View>
+    );
+  }
+
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <MainApp />
+        </AuthProvider>
+      </LanguageProvider>
+    </ThemeProvider>
+  );
+}
