@@ -1,0 +1,222 @@
+// CargoSync Database Schema
+// PostgreSQL with PostGIS extension support via Prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum UserRole {
+  SHIPPER
+  DRIVER
+  FLEET_MANAGER
+  COMPANY_ADMIN
+  PLATFORM_ADMIN
+}
+
+enum AccountType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum VerificationStatus {
+  NOT_SUBMITTED
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  CORRECTION_REQUIRED
+  REJECTED
+}
+
+enum CompanyRole {
+  ADMIN
+  DISPATCHER
+  FLEET_MANAGER
+  DRIVER
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum DocumentType {
+  AADHAAR
+  DRIVING_LICENCE
+  PAN
+  RC
+  GST_CERTIFICATE
+  INCORPORATION
+  BANK_STATEMENT
+}
+
+enum DocumentCategory {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum DocumentStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CORRECTION_REQUIRED
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  name               String
+  email              String             @unique
+  phone              String             @unique
+  passwordHash       String
+  role               UserRole           @default(SHIPPER)
+  accountType        AccountType        @default(INDIVIDUAL)
+  verificationStatus VerificationStatus @default(NOT_SUBMITTED)
+  cityHub            String?
+  avatarUrl          String?
+  rating             Float              @default(5.0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Company relations
+  ownedCompanies       Company[]              @relation("CompanyAdmin")
+  memberships          CompanyMembership[]
+  createdInvitations   Invitation[]           @relation("CreatedInvitations")
+  usedInvitations      Invitation[]           @relation("UsedInvitations")
+
+  // Document & Verification relations
+  verificationDocs     VerificationDocument[] @relation("UserDocuments")
+  uploadedDocs         VerificationDocument[] @relation("DocumentUploader")
+  reviewedDocs         VerificationDocument[] @relation("DocumentReviewer")
+  performedAuditLogs   VerificationAuditLog[] @relation("AuditPerformer")
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@index([verificationStatus])
+}
+
+model Company {
+  id                 String             @id @default(uuid())
+  legalName          String
+  businessType       String
+  gstin              String             @unique
+  registeredAddress  String
+  fleetSize          Int?
+  adminId            String
+  verificationStatus VerificationStatus @default(NOT_SUBMITTED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  admin              User                   @relation("CompanyAdmin", fields: [adminId], references: [id], onDelete: Restrict)
+  memberships        CompanyMembership[]
+  invitations        Invitation[]
+  verificationDocs   VerificationDocument[] @relation("CompanyDocuments")
+
+  @@index([gstin])
+  @@index([adminId])
+  @@index([verificationStatus])
+}
+
+model CompanyMembership {
+  id        String           @id @default(uuid())
+  userId    String
+  companyId String
+  role      CompanyRole      @default(MEMBER)
+  status    MembershipStatus @default(ACTIVE)
+  joinedAt  DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model Invitation {
+  id           String      @id @default(uuid())
+  code         String      @unique
+  companyId    String
+  role         CompanyRole @default(MEMBER)
+  createdById  String
+  invitedEmail String?
+  expiresAt    DateTime
+  used         Boolean     @default(false)
+  usedById     String?
+  usedAt       DateTime?
+  createdAt    DateTime    @default(now())
+
+  // Relations
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy    User        @relation("CreatedInvitations", fields: [createdById], references: [id], onDelete: Cascade)
+  usedBy       User?       @relation("UsedInvitations", fields: [usedById], references: [id], onDelete: SetNull)
+
+  @@index([code])
+  @@index([companyId])
+  @@index([expiresAt])
+}
+
+model VerificationDocument {
+  id             String           @id @default(uuid())
+  category       DocumentCategory
+  type           DocumentType
+  s3Key          String           @unique
+  s3Bucket       String
+  fileName       String
+  fileSize       Int
+  mimeType       String
+  status         DocumentStatus   @default(SUBMITTED)
+  version        Int              @default(1)
+  reviewRemarks  String?
+  reviewedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  // Individual ownership
+  userId         String?
+  user           User?            @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Company ownership
+  companyId      String?
+  company        Company?         @relation("CompanyDocuments", fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Actor references
+  uploadedById   String
+  uploadedBy     User             @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  reviewedById   String?
+  reviewedBy     User?            @relation("DocumentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([type])
+  @@index([status])
+  @@index([category])
+}
+
+model VerificationAuditLog {
+  id             String             @id @default(uuid())
+  entityType     DocumentCategory
+  entityId       String
+  previousStatus VerificationStatus
+  newStatus      VerificationStatus
+  remarks        String?
+  performedById  String
+  performedBy    User               @relation("AuditPerformer", fields: [performedById], references: [id], onDelete: Restrict)
+  createdAt      DateTime           @default(now())
+
+  @@index([entityId])
+  @@index([entityType])
+  @@index([performedById])
+}
